@@ -210,6 +210,16 @@
         }
       ]
     },
+    "alarm_mower_errorcode_capability": {
+      "type": "boolean",
+      "title": {
+        "en": "Error"
+      },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "icon": "/drivers/mower/assets/error.svg"
+    },
     "mower_errorcode_capability": {
       "type": "enum",
       "title": {
@@ -1070,6 +1080,29 @@
               "en": "Battery"
             },
             "example": 42
+          }
+        ],
+        "args": [
+          {
+            "name": "Automower",
+            "type": "device",
+            "filter": "driver_id=mower"
+          }
+        ]
+      },
+      {
+        "id": "alarm_mower_errorcode_capability_changed",
+        "title": {
+          "en": "Error changed"
+        },
+        "tokens": [
+          {
+            "name": "value",
+            "type": "boolean",
+            "title": {
+              "en": "Error"
+            },
+            "example": false
           }
         ],
         "args": [

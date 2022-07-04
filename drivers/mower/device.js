@@ -16,6 +16,7 @@ module.exports = class MowerDevice extends Homey.Device {
 
     /* Add updated capabilities, since first version, if needed */
     this.addCapabilityIfNeeded('mower_nextstart_capability');
+    this.addCapabilityIfNeeded('alarm_mower_errorcode_capability');
 
     if (!this.util) this.util = new AutomowerApiUtil({homey: this.homey });
    
@@ -93,6 +94,7 @@ module.exports = class MowerDevice extends Homey.Device {
         this.updateCapablity( "mower_activity_capability", mowerData.data.attributes.mower.activity );
         this.updateCapablity( "mower_state_capability", mowerData.data.attributes.mower.state );
         this.updateCapablity( "mower_errorcode_capability", mowerData.data.attributes.mower.errorCode.toString() );
+        this.updateCapablity( "alarm_mower_errorcode_capability", (mowerData.data.attributes.mower.state.includes('ERROR') ? true : false) );
         this.updateCapablity( "mower_battery_capability", mowerData.data.attributes.battery.batteryPercent );
         this.updateCapablity( "mower_nextstart_capability", this.timeStampToNextStart(mowerData.data.attributes.planner.nextStartTimestamp) );
       }

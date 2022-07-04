@@ -118,15 +118,16 @@ module.exports = class MowerDriver extends Homey.Driver {
     this.homey.flow.getConditionCard('activity_is')
       .registerRunListener(async (args, state) => {
         this.log('MowerDevice Flow-condition activity_is triggered');
-        return (args.activity === args.Automower.getCapabilityValue('mower_activity_capability'));
+        let current_activity = await args.Automower.getCapabilityValue('mower_activity_capability')
+        return (args.activity === current_activity);
       });  
 
     /* Condition 'state_is' */
     this.homey.flow.getConditionCard('state_is')
       .registerRunListener(async (args, state) => {
         this.log('MowerDevice Flow-condition state_is triggered');
-        console.log(args);
-        return (args.state === args.Automower.getCapabilityValue('mower_state_capability'));
+        let current_state = await args.Automower.getCapabilityValue('mower_state_capability')
+        return (args.state === current_state);
       });
   }
 }
