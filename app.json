@@ -907,6 +907,22 @@
             }
           }
         ]
+      },
+      {
+        "id": "confirm_current_error",
+        "title": {
+          "en": "Confirm error"
+        },
+        "hint": {
+          "en": "Confirm non-fatal error"
+        },
+        "args": [
+          {
+            "name": "Automower",
+            "type": "device",
+            "filter": "driver_id=mower"
+          }
+        ]
       }
     ]
   },

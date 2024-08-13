@@ -121,6 +121,15 @@ module.exports = class MowerDriver extends Homey.Driver {
       return actionResult;
     });
 
+    /* Confirm current error */
+    this.homey.flow.getActionCard('confirm_current_error')
+    .registerRunListener(async (args, state) => {
+      this.log('MowerDevice FlowAction confirm_current_error triggered');
+      let id = args.Automower.getData().id;
+      let actionResult = await this.util.confirmCurrentError(id);
+      return actionResult;
+    });
+
     /* Condition 'activity_is' */
     this.homey.flow.getConditionCard('activity_is')
       .registerRunListener(async (args, state) => {
