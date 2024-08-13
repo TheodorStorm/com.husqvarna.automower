@@ -1,10 +1,11 @@
 'use strict';
 
 const Homey = require('homey');
-const AutomowerApiUtil = require('/lib/automowerapiutil.js');
+const AutomowerApiUtil = require('../../lib/automowerapiutil.js');
+const ErrorCodes = require('./errorcodes.js');
 const fetch = require('node-fetch');
 
-/* Date and Time stuff*/
+/* Date and Time stuff */
 const dayjs = require('dayjs');;
 var calendar = require('dayjs/plugin/calendar');
 dayjs.extend(calendar);
@@ -15,8 +16,10 @@ module.exports = class MowerDevice extends Homey.Device {
     this.log('MowerDevice has been initialized');
 
     /* Add updated capabilities, since first version, if needed */
-    this.addCapabilityIfNeeded('mower_nextstart_capability');
-    this.addCapabilityIfNeeded('alarm_mower_errorcode_capability');
+    await this.addCapabilityIfNeeded('mower_nextstart_capability');
+    await this.addCapabilityIfNeeded('mower_inactivereason_capability');
+    await this.addCapabilityIfNeeded('mower_lastposition_capability');
+    await this.addCapabilityIfNeeded('alarm_mower_errorcode_capability');
 
     if (!this.util) this.util = new AutomowerApiUtil({homey: this.homey });
    
@@ -24,7 +27,7 @@ module.exports = class MowerDevice extends Homey.Device {
     this._pollingInterval = this.getSettings().polling_interval * 60000;
 
     if (eval(this.getSettings().polling))
-      this.refreshCapabilities();
+      this.refreshCapabilitiesFromInterval();
   }
 
   async onAdded() {
@@ -46,43 +49,49 @@ module.exports = class MowerDevice extends Homey.Device {
   async onSettings({ oldSettings, newSettings, changedKeys }) {
     this.log('MowerDevice settings where changed');
 
-    if (changedKeys.includes('polling_interval')) {
-      if ( this._timerId ) {
-        clearTimeout( this._timerId );
+    const newPolling = newSettings.polling === 'true';
+    const pollingChanged = changedKeys.includes('polling');
+    const intervalChanged = changedKeys.includes('polling_interval');
+
+    /* Timer cleanup */
+    if (intervalChanged || (pollingChanged && !newPolling)) {
+      if (this._timerId) {
+        clearTimeout(this._timerId);
         this._timerId = null;
       }
+    }
+
+    /* Update interval time */
+    if (intervalChanged) {
       this._pollingInterval = newSettings.polling_interval * 60000;
-      if (eval(this.getSettings().polling))
-        this.refreshCapabilities();
     }
 
-    if (changedKeys.includes('polling') && eval(newSettings.polling) == false) {
-      if ( this._timerId ) {
-        clearTimeout( this._timerId );
-        this._timerId = null;
-      }
+    /* Reactivate polling based on current settings */
+    if ((intervalChanged && newPolling) || (pollingChanged && newPolling)) {
+      await this.refreshCapabilitiesFromInterval();
     }
 
-    if (changedKeys.includes('polling') && eval(newSettings.polling) == true) {
-      if ( this._timerId ) {
-        clearTimeout( this._timerId );
-        this._timerId = null;
-      }
-      this.refreshCapabilities();
-    }
   }
 
   async addCapabilityIfNeeded(capability) {
     if (!this.getCapabilities().includes(capability)) {
       this.log('Capability ' + capability + ' not found, lets call addCapability.')
-      this.addCapability(capability);
+      await this.addCapability(capability);
     }
   }
-  
-  async refreshCapabilities() {
+
+  async refreshCapabilitiesFromInterval() {
+    await this.refreshMowerCapabilities()
+    this._timerId = setTimeout( async () =>
+    {
+        await this.refreshCapabilitiesFromInterval();
+    }, this._pollingInterval );
+  }
+
+  async refreshMowerCapabilities() {
     try
     {
-      this.log( "MowerDevice refreshCapabilities" );
+      this.log( "MowerDevice refreshMowerCapabilities" );
       this.unsetWarning();
 
       let id = this.getData().id;
@@ -90,13 +99,20 @@ module.exports = class MowerDevice extends Homey.Device {
 
       if ( mowerData ) {
         this.setAvailable();
-        this.updateCapablity( "mower_mode_capability", mowerData.data.attributes.mower.mode );
-        this.updateCapablity( "mower_activity_capability", mowerData.data.attributes.mower.activity );
-        this.updateCapablity( "mower_state_capability", mowerData.data.attributes.mower.state );
-        this.updateCapablity( "mower_errorcode_capability", mowerData.data.attributes.mower.errorCode.toString() );
-        this.updateCapablity( "alarm_mower_errorcode_capability", (mowerData.data.attributes.mower.state.includes('ERROR') ? true : false) );
-        this.updateCapablity( "mower_battery_capability", mowerData.data.attributes.battery.batteryPercent );
-        this.updateCapablity( "mower_nextstart_capability", this.timeStampToNextStart(mowerData.data.attributes.planner.nextStartTimestamp) );
+        await this.updateCapablity( "mower_mode_capability", mowerData.data.attributes.mower.mode );
+        await this.updateCapablity( "mower_activity_capability", mowerData.data.attributes.mower.activity );
+        await this.updateCapablity( "mower_state_capability", mowerData.data.attributes.mower.state );
+        await this.updateCapablity( "mower_errorcode_capability", ErrorCodes.getErrorDescriptionById(mowerData.data.attributes.mower.errorCode), {
+          'value': mowerData.data.attributes.mower.errorCode,
+          'description': ErrorCodes.getErrorDescriptionById(mowerData.data.attributes.mower.errorCode)});
+        await this.updateCapablity( "mower_battery_capability", mowerData.data.attributes.battery.batteryPercent );
+        await this.updateCapablity( "mower_nextstart_capability", this.timeStampToNextStart(mowerData.data.attributes.planner.nextStartTimestamp) );
+        await this.updateCapablity( "mower_inactivereason_capability", mowerData.data.attributes.mower.inactiveReason );
+        await this.updateCapablity( "mower_lastposition_capability", `${mowerData.data.attributes.positions[0].latitude},${mowerData.data.attributes.positions[0].longitude}`, {
+          'latitude': mowerData.data.attributes.positions[0].latitude,
+          'longitude': mowerData.data.attributes.positions[0].longitude
+        });
+        await this.updateCapablity( "alarm_mower_errorcode_capability", (mowerData.data.attributes.mower.state.includes('ERROR') ? true : false) );
       }
       else {
           this.setWarning( "No data received", null );
@@ -107,20 +123,25 @@ module.exports = class MowerDevice extends Homey.Device {
         this.log(err.stack);
         this.setWarning( "error getting mower status", null );
     }
-
-    this._timerId = setTimeout( () =>
-    {
-        this.refreshCapabilities();
-    }, this._pollingInterval );
   }
 
-  async updateCapablity(capability, value) {
-    let currentValue = this.getCapabilityValue(capability);
-    this.setCapabilityValue( capability, value );
+  async updateCapablity(capability, value, triggerValue = {'value': value}) {
+    let currentValue = await this.getCapabilityValue(capability);
+    await this.setCapabilityValue( capability, value);
+
+    /* Temporary to help the switch from enum to string in mower_errorcode_capability
+       This will skip the unnecessary trigger when current erroCode (old version)
+       is '0' (enum) and now gets set to '---'
+       Can be removed in future versions
+    */
+    if (capability === 'mower_errorcode_capability' && currentValue === '0' && value === '---') {
+      currentValue = await this.getCapabilityValue(capability);
+    }
+
     if (currentValue != value) {
-      this.homey.flow.getDeviceTriggerCard(`${capability}_changed`)
-        .trigger( this, {'value': value}, {})
-        .catch(this.error);
+        this.homey.flow.getDeviceTriggerCard(`${capability}_changed`)
+          .trigger( this, triggerValue, {})
+          .catch(this.error);
     }
   }
 

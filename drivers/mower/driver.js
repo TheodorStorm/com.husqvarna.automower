@@ -1,14 +1,14 @@
 'use strict';
 
 const Homey = require('homey');
-const AutomowerApiUtil = require('/lib/automowerapiutil.js');
+const AutomowerApiUtil = require('../../lib/automowerapiutil.js');
+const PositionUtil = require('../../lib/positionutil.js');
 
 module.exports = class MowerDriver extends Homey.Driver {
 
   async onInit() {
     if (!this.util) {
       this.util = new AutomowerApiUtil({homey: this.homey });
-      await this.util.login(true);
       await this.initFlows();
     }
     this.log('MowerDriver has been initialized');
@@ -22,14 +22,21 @@ module.exports = class MowerDriver extends Homey.Driver {
   async initFlows() {
     this.log('MowerDevice initalize flows');
 
-    /* Action 'pause' */
+    /* Action 'Poll' */
+    this.homey.flow.getActionCard('poll')
+      .registerRunListener(async (args, state) => {
+        this.log('MowerDevice FlowAction poll triggered');
+        await args.Automower.refreshMowerCapabilities();
+    });
+
+    /* Action 'Pause' */
     this.homey.flow.getActionCard('pause')
       .registerRunListener(async (args, state) => {
         this.log('MowerDevice FlowAction pause triggered');
         let id = args.Automower.getData().id;
         let data = {
           data: {
-            type: 'ParkUntilFurtherNotice'
+            type: 'Pause'
           }
         };
       let actionResult = await this.util.sendMowerAction(id, data);
@@ -126,8 +133,56 @@ module.exports = class MowerDriver extends Homey.Driver {
     this.homey.flow.getConditionCard('state_is')
       .registerRunListener(async (args, state) => {
         this.log('MowerDevice Flow-condition state_is triggered');
-        let current_state = await args.Automower.getCapabilityValue('mower_state_capability')
-        return (args.state === current_state);
+        return (args.state === args.Automower.getCapabilityValue('mower_state_capability'));
+      });
+
+    /* Condition 'latitude_greater_than' */
+    this.homey.flow.getConditionCard('latitude_greater_than')
+      .registerRunListener(async (args, state) => {
+        let latitude = args.Automower.getCapabilityValue('mower_lastposition_capability').split(',')[0];
+        let conditionResult = latitude > args.latitude;
+        this.log(`MowerDevice Flow-condition latitude_greater_than triggered - condition result ${conditionResult}`);
+        return (conditionResult);
+      });
+
+    /* Condition 'latitude_less_than' */
+    this.homey.flow.getConditionCard('latitude_less_than')
+      .registerRunListener(async (args, state) => {
+        let latitude = args.Automower.getCapabilityValue('mower_lastposition_capability').split(',')[0];
+        let conditionResult = latitude < args.latitude;
+        this.log(`MowerDevice Flow-condition latitude_less_than triggered - condition result ${conditionResult}`);
+        return (args.latitude < latitude);
+      });
+
+    /* Condition 'longitude_greater_than' */
+    this.homey.flow.getConditionCard('longitude_greater_than')
+      .registerRunListener(async (args, state) => {
+        let longitude = args.Automower.getCapabilityValue('mower_lastposition_capability').split(',')[1];
+        let conditionResult = longitude > args.longitude;
+        this.log(`MowerDevice Flow-condition longitude_greater_than triggered - condition result ${conditionResult}`);
+        return (longitude > args.longitude);
+      });
+
+    /* Condition 'longitude_less_than' */
+    this.homey.flow.getConditionCard('longitude_less_than')
+      .registerRunListener(async (args, state) => {
+        let longitude = args.Automower.getCapabilityValue('mower_lastposition_capability').split(',')[1];
+        let conditionResult = longitude < args.longitude;
+        this.log(`MowerDevice Flow-condition longitude_less_than triggered - condition result ${conditionResult}`);
+        return (longitude < args.longitude);
+      });
+
+    /* Condition 'lastposition_is_inside_any_polygon' */
+    this.homey.flow.getConditionCard('lastposition_is_inside_any_polygon')
+      .registerRunListener(async (args, state) => {
+        /* Turf and GeoJSON uses the format lon,lat while the capability follow the canonical format lat,lon */
+        let lastPositionCapability = args.Automower.getCapabilityValue('mower_lastposition_capability');
+        let latitude = lastPositionCapability.split(',')[0];
+        let longitude = lastPositionCapability.split(',')[1];
+        let conditionResult = PositionUtil.checkPointInPolygons([longitude, latitude], args.polygons);
+
+        this.log(`MowerDevice Flow-condition lastposition_is_inside_any_polygon tested with result ${conditionResult}`);
+        return (conditionResult);
       });
   }
 }
